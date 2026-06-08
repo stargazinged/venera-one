@@ -63,21 +63,18 @@ class LocalComic with HistoryMixin implements Comic {
   });
 
   LocalComic.fromRow(Row row)
-      : id = row[0] as String,
-        title = row[1] as String,
-        subtitle = row[2] as String,
-        tags = List.from(jsonDecode(row[3] as String)),
-        directory = row[4] as String,
-        chapters = ComicChapters.fromJsonOrNull(jsonDecode(row[5] as String)),
-        cover = row[6] as String,
-        comicType = ComicType(row[7] as int),
-        downloadedChapters = List.from(jsonDecode(row[8] as String)),
-        createdAt = DateTime.fromMillisecondsSinceEpoch(row[9] as int);
+    : id = row[0] as String,
+      title = row[1] as String,
+      subtitle = row[2] as String,
+      tags = List.from(jsonDecode(row[3] as String)),
+      directory = row[4] as String,
+      chapters = ComicChapters.fromJsonOrNull(jsonDecode(row[5] as String)),
+      cover = row[6] as String,
+      comicType = ComicType(row[7] as int),
+      downloadedChapters = List.from(jsonDecode(row[8] as String)),
+      createdAt = DateTime.fromMillisecondsSinceEpoch(row[9] as int);
 
-  File get coverFile => File(FilePath.join(
-        baseDir,
-        cover,
-      ));
+  File get coverFile => File(FilePath.join(baseDir, cover));
 
   String get baseDir => (directory.contains('/') || directory.contains('\\'))
       ? directory
@@ -114,10 +111,10 @@ class LocalComic with HistoryMixin implements Comic {
     if (downloadedChapters.isNotEmpty && chapters != null) {
       final chapters = this.chapters!;
       if (chapters.isGrouped) {
-        for (int i=0; i<chapters.groupCount; i++) {
+        for (int i = 0; i < chapters.groupCount; i++) {
           var group = chapters.getGroupByIndex(i);
           var keys = group.keys.toList();
-          for (int j=0; j<keys.length; j++) {
+          for (int j = 0; j < keys.length; j++) {
             var chapterId = keys[j];
             if (downloadedChapters.contains(chapterId)) {
               firstDownloadedChapter = j + 1;
@@ -145,15 +142,10 @@ class LocalComic with HistoryMixin implements Comic {
         initialChapter: history?.ep ?? firstDownloadedChapter,
         initialPage: history?.page,
         initialChapterGroup: history?.group ?? firstDownloadedChapterGroup,
-        history: history ??
-            History.fromModel(
-              model: this,
-              ep: 0,
-              page: 0,
-            ),
+        history: history ?? History.fromModel(model: this, ep: 0, page: 0),
         author: subtitle,
         tags: tags,
-      )
+      ),
     );
   }
 
@@ -208,12 +200,10 @@ class LocalManager with ChangeNotifier {
       return "Directory is not empty";
     }
     try {
-      await copyDirectoryIsolate(
-        directory,
-        newDir,
-      );
-      await File(FilePath.join(App.dataPath, 'local_path'))
-          .writeAsString(newPath);
+      await copyDirectoryIsolate(directory, newDir);
+      await File(
+        FilePath.join(App.dataPath, 'local_path'),
+      ).writeAsString(newPath);
     } catch (e, s) {
       Log.error("IO", e, s);
       return e.toString();
@@ -252,16 +242,16 @@ class LocalManager with ChangeNotifier {
       testFile.createSync();
       testFile.deleteSync();
     } catch (e) {
-      Log.error("IO",
-          "Failed to create test file in local path: $e\nUsing default path instead.");
+      Log.error(
+        "IO",
+        "Failed to create test file in local path: $e\nUsing default path instead.",
+      );
       path = await findDefaultPath();
     }
   }
 
   Future<void> init() async {
-    _db = sqlite3.open(
-      '${App.dataPath}/local.db',
-    );
+    _db = sqlite3.open('${App.dataPath}/local.db');
     _db.execute('''
       CREATE TABLE IF NOT EXISTS comics (
         id TEXT NOT NULL,
@@ -338,10 +328,10 @@ class LocalManager with ChangeNotifier {
   }
 
   void remove(String id, ComicType comicType) async {
-    _db.execute(
-      'DELETE FROM comics WHERE id = ? AND comic_type = ?;',
-      [id, comicType.value],
-    );
+    _db.execute('DELETE FROM comics WHERE id = ? AND comic_type = ?;', [
+      id,
+      comicType.value,
+    ]);
     notifyListeners();
   }
 
@@ -395,10 +385,13 @@ class LocalManager with ChangeNotifier {
   }
 
   LocalComic? findByName(String name) {
-    final res = _db.select('''
+    final res = _db.select(
+      '''
       SELECT * FROM comics
       WHERE title = ? OR directory = ?;
-    ''', [name, name]);
+    ''',
+      [name, name],
+    );
     if (res.isEmpty) {
       return null;
     }
@@ -406,11 +399,14 @@ class LocalManager with ChangeNotifier {
   }
 
   List<LocalComic> search(String keyword) {
-    final res = _db.select('''
+    final res = _db.select(
+      '''
       SELECT * FROM comics
       WHERE title LIKE ? OR tags LIKE ? OR subtitle LIKE ?
       ORDER BY created_at DESC;
-    ''', ['%$keyword%', '%$keyword%', '%$keyword%']);
+    ''',
+      ['%$keyword%', '%$keyword%', '%$keyword%'],
+    );
     return res.map((row) => LocalComic.fromRow(row)).toList();
   }
 
@@ -421,25 +417,23 @@ class LocalManager with ChangeNotifier {
     var comic = find(id, type) ?? (throw "Comic Not Found");
     var directory = Directory(comic.baseDir);
     if (comic.hasChapters) {
-      var cid =
-          ep is int ? comic.chapters!.ids.elementAt(ep - 1) : (ep as String);
+      var cid = ep is int
+          ? comic.chapters!.ids.elementAt(ep - 1)
+          : (ep as String);
       cid = getChapterDirectoryName(cid);
       directory = Directory(FilePath.join(directory.path, cid));
     }
+    if (!await directory.exists()) {
+      throw "Local comic files not found";
+    }
     var files = <File>[];
     await for (var entity in directory.list()) {
-      if (entity is File) {
-        // Do not exclude comic.cover, since it may be the first page of the chapter.
-        // A file with name starting with 'cover.' is not a comic page.
-        if (entity.name.startsWith('cover.')) {
-          continue;
-        }
-        //Hidden file in some file system
-        if (entity.name.startsWith('.')) {
-          continue;
-        }
+      if (entity is File && _isComicPageFile(entity)) {
         files.add(entity);
       }
+    }
+    if (files.isEmpty) {
+      throw "Local comic files not found";
     }
     files.sort((a, b) {
       var ai = int.tryParse(a.name.split('.').first);
@@ -452,41 +446,98 @@ class LocalManager with ChangeNotifier {
     return files.map((e) => "file://${e.path}").toList();
   }
 
-  bool isDownloaded(String id, ComicType type,
-      [int? ep, ComicChapters? chapters]) {
+  static bool _isComicPageFile(FileSystemEntity entity) {
+    if (entity is! File) return false;
+    // Do not exclude comic.cover, since it may be the first page of the chapter.
+    // A file with name starting with 'cover.' is not a comic page.
+    if (entity.name.startsWith('cover.')) return false;
+    // Hidden file in some file system.
+    if (entity.name.startsWith('.')) return false;
+    return true;
+  }
+
+  static bool _hasComicPageFiles(Directory directory) {
+    if (!directory.existsSync()) return false;
+    try {
+      for (var entity in directory.listSync()) {
+        if (_isComicPageFile(entity)) {
+          return true;
+        }
+      }
+    } catch (_) {
+      return false;
+    }
+    return false;
+  }
+
+  static bool _hasDownloadedImages(LocalComic comic, [String? chapterId]) {
+    if (chapterId != null) {
+      return _hasComicPageFiles(
+        Directory(
+          FilePath.join(comic.baseDir, getChapterDirectoryName(chapterId)),
+        ),
+      );
+    }
+    if (comic.chapters == null) {
+      return _hasComicPageFiles(Directory(comic.baseDir));
+    }
+    for (var downloadedChapter in comic.downloadedChapters) {
+      if (_hasDownloadedImages(comic, downloadedChapter)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool isDownloaded(
+    String id,
+    ComicType type, [
+    int? ep,
+    ComicChapters? chapters,
+  ]) {
     var comic = find(id, type);
     if (comic == null) return false;
-    if (comic.chapters == null || ep == null) return true;
+    if (comic.chapters == null || ep == null) {
+      return _hasDownloadedImages(comic);
+    }
     if (chapters != null) {
       if (comic.chapters?.length != chapters.length) {
         // update
-        add(LocalComic(
-          id: comic.id,
-          title: comic.title,
-          subtitle: comic.subtitle,
-          tags: comic.tags,
-          directory: comic.directory,
-          chapters: chapters,
-          cover: comic.cover,
-          comicType: comic.comicType,
-          downloadedChapters: comic.downloadedChapters,
-          createdAt: comic.createdAt,
-        ));
+        add(
+          LocalComic(
+            id: comic.id,
+            title: comic.title,
+            subtitle: comic.subtitle,
+            tags: comic.tags,
+            directory: comic.directory,
+            chapters: chapters,
+            cover: comic.cover,
+            comicType: comic.comicType,
+            downloadedChapters: comic.downloadedChapters,
+            createdAt: comic.createdAt,
+          ),
+        );
       }
     }
-    return comic.downloadedChapters
-        .contains((chapters ?? comic.chapters)!.ids.elementAtOrNull(ep - 1));
+    var chapterId = (chapters ?? comic.chapters)!.ids.elementAtOrNull(ep - 1);
+    return chapterId != null &&
+        comic.downloadedChapters.contains(chapterId) &&
+        _hasDownloadedImages(comic, chapterId);
   }
 
   List<DownloadTask> downloadingTasks = [];
 
   bool isDownloading(String id, ComicType type) {
-    return downloadingTasks
-        .any((element) => element.id == id && element.comicType == type);
+    return downloadingTasks.any(
+      (element) => element.id == id && element.comicType == type,
+    );
   }
 
   Future<Directory> findValidDirectory(
-      String id, ComicType type, String name) async {
+    String id,
+    ComicType type,
+    String name,
+  ) async {
     var comic = find(id, type);
     if (comic != null) {
       return Directory(FilePath.join(path, comic.directory));
@@ -529,8 +580,9 @@ class LocalManager with ChangeNotifier {
 
   Future<void> saveCurrentDownloadingTasks() async {
     var tasks = downloadingTasks.map((e) => e.toJson()).toList();
-    await File(FilePath.join(App.dataPath, 'downloading_tasks.json'))
-        .writeAsString(jsonEncode(tasks));
+    await File(
+      FilePath.join(App.dataPath, 'downloading_tasks.json'),
+    ).writeAsString(jsonEncode(tasks));
   }
 
   void restoreDownloadingTasks() {
@@ -587,24 +639,19 @@ class LocalManager with ChangeNotifier {
     if (newDownloadedChapters.isNotEmpty) {
       _db.execute(
         'UPDATE comics SET downloadedChapters = ? WHERE id = ? AND comic_type = ?;',
-        [
-          jsonEncode(newDownloadedChapters),
-          c.id,
-          c.comicType.value,
-        ],
+        [jsonEncode(newDownloadedChapters), c.id, c.comicType.value],
       );
     } else {
-      _db.execute(
-        'DELETE FROM comics WHERE id = ? AND comic_type = ?;',
-        [c.id, c.comicType.value],
-      );
+      _db.execute('DELETE FROM comics WHERE id = ? AND comic_type = ?;', [
+        c.id,
+        c.comicType.value,
+      ]);
     }
     var shouldRemovedDirs = <Directory>[];
     for (var chapter in chapters) {
-      var dir = Directory(FilePath.join(
-        c.baseDir,
-        getChapterDirectoryName(chapter),
-      ));
+      var dir = Directory(
+        FilePath.join(c.baseDir, getChapterDirectoryName(chapter)),
+      );
       if (dir.existsSync()) {
         shouldRemovedDirs.add(dir);
       }
@@ -615,7 +662,11 @@ class LocalManager with ChangeNotifier {
     notifyListeners();
   }
 
-  void batchDeleteComics(List<LocalComic> comics, [bool removeFileOnDisk = true, bool removeFavoriteAndHistory = true]) {
+  void batchDeleteComics(
+    List<LocalComic> comics, [
+    bool removeFileOnDisk = true,
+    bool removeFavoriteAndHistory = true,
+  ]) {
     if (comics.isEmpty) {
       return;
     }
@@ -630,13 +681,12 @@ class LocalManager with ChangeNotifier {
             shouldRemovedDirs.add(dir);
           }
         }
-        _db.execute(
-          'DELETE FROM comics WHERE id = ? AND comic_type = ?;',
-          [c.id, c.comicType.value],
-        );
+        _db.execute('DELETE FROM comics WHERE id = ? AND comic_type = ?;', [
+          c.id,
+          c.comicType.value,
+        ]);
       }
-    }
-    catch(e, s) {
+    } catch (e, s) {
       Log.error("LocalManager", "Failed to batch delete comics: $e", s);
       _db.execute('ROLLBACK;');
       return;
@@ -677,9 +727,15 @@ class LocalManager with ChangeNotifier {
     var builder = StringBuffer();
     for (var i = 0; i < name.length; i++) {
       var char = name[i];
-      if (char == '/' || char == '\\' || char == ':' || char == '*' ||
-          char == '?'
-          || char == '"' || char == '<' || char == '>' || char == '|') {
+      if (char == '/' ||
+          char == '\\' ||
+          char == ':' ||
+          char == '*' ||
+          char == '?' ||
+          char == '"' ||
+          char == '<' ||
+          char == '>' ||
+          char == '|') {
         builder.write('_');
       } else {
         builder.write(char);

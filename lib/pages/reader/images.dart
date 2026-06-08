@@ -38,13 +38,15 @@ class _ReaderImagesState extends State<_ReaderImages> {
   void load() async {
     if (inProgress) return;
     inProgress = true;
-    if (reader.type == ComicType.local ||
-        (LocalManager().isDownloaded(
+    var shouldLoadLocal =
+        reader.type == ComicType.local ||
+        LocalManager().isDownloaded(
           reader.cid,
           reader.type,
           reader.chapter,
           reader.widget.chapters,
-        ))) {
+        );
+    if (shouldLoadLocal) {
       try {
         var images = await LocalManager().getImages(
           reader.cid,
@@ -60,36 +62,46 @@ class _ReaderImagesState extends State<_ReaderImages> {
             reader.updateHistory();
           });
         });
+        context.readerScaffold.update();
+        return;
       } catch (e) {
-        setState(() {
-          error = e.toString();
-          reader.isLoading = false;
-          inProgress = false;
-        });
-      }
-    } else {
-      var cp = reader.widget.chapters?.ids.elementAtOrNull(reader.chapter - 1);
-      var res = await reader.type.comicSource!.loadComicPages!(
-        reader.widget.cid,
-        cp,
-      );
-      if (res.error) {
-        setState(() {
-          error = res.errorMessage;
-          reader.isLoading = false;
-          inProgress = false;
-        });
-      } else {
-        setState(() {
-          reader.images = res.data;
-          reader.isLoading = false;
-          inProgress = false;
-          _handleJumpToLastPage();
-          Future.microtask(() {
-            reader.updateHistory();
+        if (reader.type == ComicType.local) {
+          setState(() {
+            error = e.toString();
+            reader.isLoading = false;
+            inProgress = false;
           });
-        });
+          context.readerScaffold.update();
+          return;
+        }
+        Log.info(
+          "Reader",
+          "Local images unavailable, loading from network: $e",
+        );
       }
+    }
+
+    var cp = reader.widget.chapters?.ids.elementAtOrNull(reader.chapter - 1);
+    var res = await reader.type.comicSource!.loadComicPages!(
+      reader.widget.cid,
+      cp,
+    );
+    if (res.error) {
+      setState(() {
+        error = res.errorMessage;
+        reader.isLoading = false;
+        inProgress = false;
+      });
+    } else {
+      setState(() {
+        reader.images = res.data;
+        reader.isLoading = false;
+        inProgress = false;
+        _handleJumpToLastPage();
+        Future.microtask(() {
+          reader.updateHistory();
+        });
+      });
     }
     context.readerScaffold.update();
   }
@@ -382,7 +394,8 @@ class _GalleryModeState extends State<_GalleryMode>
         },
         onPageChanged: (i) {
           if (i == 0) {
-            if (reader.isFirstChapterOfGroup || !reader.toPrevChapter(toLastPage: true)) {
+            if (reader.isFirstChapterOfGroup ||
+                !reader.toPrevChapter(toLastPage: true)) {
               controller.jumpToPage(1);
             }
           } else if (i == totalPages + 1) {
@@ -1225,7 +1238,9 @@ ImageProvider _createImageProviderFromKey(
     reader.cid,
     reader.eid,
     reader.page,
-    enableResize: reader.mode.isContinuous, // For continuous mode, we need to resize the image to improve performance
+    enableResize: reader
+        .mode
+        .isContinuous, // For continuous mode, we need to resize the image to improve performance
   );
 }
 
