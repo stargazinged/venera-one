@@ -473,9 +473,9 @@ class LocalFavoritesManager with ChangeNotifier {
   void addTagTo(String folder, String id, String tag) {
     _db.execute("""
       update "$folder"
-      set tags = '$tag,' || tags
+      set tags = ? || tags
       where id == ?
-    """, [id]);
+    """, ['$tag,', id]);
     notifyListeners();
   }
 
@@ -497,6 +497,11 @@ class LocalFavoritesManager with ChangeNotifier {
 
   /// create a folder
   String createFolder(String name, [bool renameWhenInvalidName = false]) {
+    if (name.contains('"')) {
+      // The name is used directly as a SQL table identifier, so a double
+      // quote would allow breaking out of the quoted identifier.
+      throw "Invalid name";
+    }
     if (name.isEmpty) {
       if (renameWhenInvalidName) {
         int i = 0;
