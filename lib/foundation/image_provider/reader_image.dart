@@ -2,6 +2,7 @@ import 'dart:async' show Future;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_qjs/flutter_qjs.dart';
+import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/network/images.dart';
 import 'package:venera/utils/io.dart';
@@ -42,7 +43,30 @@ class ReaderImageProvider
       if (await file.exists()) {
         imageBytes = await file.readAsBytes();
       } else {
-        throw "Error: File not found.";
+        // The downloaded file was moved or deleted after the chapter was
+        // opened. Recover by loading the same page from the network source.
+        var networkKey = await _resolveNetworkKeyForLocalFile(file);
+        if (networkKey == null) {
+          throw "Error: File not found.";
+        }
+        await for (var event in ImageDownloader.loadComicImage(
+          networkKey,
+          sourceKey,
+          cid,
+          eid,
+        )) {
+          checkStop();
+          chunkEvents.add(
+            ImageChunkEvent(
+              cumulativeBytesLoaded: event.currentBytes,
+              expectedTotalBytes: event.totalBytes,
+            ),
+          );
+          if (event.imageBytes != null) {
+            imageBytes = event.imageBytes;
+            break;
+          }
+        }
       }
     } else {
       await for (var event in ImageDownloader.loadComicImage(
@@ -126,6 +150,24 @@ class ReaderImageProvider
       }
     }
     return imageBytes!;
+  }
+
+  /// Maps a missing local page file back to its network image url.
+  ///
+  /// Downloaded pages are stored with their zero-based page index as the file
+  /// name (e.g. `0.jpg`, `1.jpg`), so the index is used to look up the matching
+  /// entry in the chapter's network page list.
+  Future<String?> _resolveNetworkKeyForLocalFile(File file) async {
+    if (sourceKey == null) return null;
+    var source = ComicSource.find(sourceKey!);
+    if (source?.loadComicPages == null) return null;
+    var pageIndex = int.tryParse(file.name.split('.').first);
+    if (pageIndex == null) return null;
+    var res = await source!.loadComicPages!(cid, eid == '0' ? null : eid);
+    if (res.error) return null;
+    var pages = res.data;
+    if (pageIndex < 0 || pageIndex >= pages.length) return null;
+    return pages[pageIndex];
   }
 
   @override
